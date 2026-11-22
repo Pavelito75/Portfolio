@@ -24,8 +24,8 @@ const cspPlugin = (): Plugin => ({
 })
 
 // https://vite.dev/config/
-// A build e o preview usam o caminho do GitHub Pages, o modo dev fica na raiz
-export default defineConfig(({ command, isPreview }) => ({
+// Caminho relativo para funcionar tanto no GitHub Pages (/Portfolio/) quanto em domínio personalizado ou local
+export default defineConfig({
   plugins: [react(), cspPlugin()],
-  base: command === 'build' || isPreview ? '/portfolio/' : '/',
-}))
+  base: './',
+})
