@@ -109,35 +109,35 @@ const SecretTerminal: React.FC = () => {
     }
   };
 
-  // return createPortal(
-  //   <div className="secret-terminal-backdrop" onClick={(e) => e.target === e.currentTarget && close()}>
-  //     <div className="secret-terminal">
-  //       <div className="secret-terminal__bar">
-  //         <span className="secret-terminal__dot bg-red-500" onClick={close} />
-  //         <span className="secret-terminal__dot bg-yellow-500" />
-  //         <span className="secret-terminal__dot bg-green-500" />
-  //         <span className="secret-terminal__title">pavel@terminal: ~</span>
-  //       </div>
-  //       <div ref={screen} className="secret-terminal__screen">
-  //         {lines.map((l, i) => (
-  //           <div key={i} className="secret-terminal__line">{l}</div>
-  //         ))}
-  //         <form onSubmit={submit} className="secret-terminal__prompt-line">
-  //           <span className="secret-terminal__prompt">$</span>
-  //           <input
-  //             ref={input}
-  //             type="text"
-  //             value={value}
-  //             onChange={(e) => setValue(e.target.value)}
-  //             className="secret-terminal__input"
-  //             autoFocus
-  //           />
-  //         </form>
-  //       </div>
-  //     </div>
-  //   </div>,
-  //   document.body
-  // );
+  return createPortal(
+    <div className="secret-terminal-backdrop" onClick={(e) => e.target === e.currentTarget && close()}>
+      <div className="secret-terminal">
+        <div className="secret-terminal__bar">
+          <span className="secret-terminal__dot bg-red-500" onClick={close} />
+          <span className="secret-terminal__dot bg-yellow-500" />
+          <span className="secret-terminal__dot bg-green-500" />
+          <span className="secret-terminal__title">pavel@terminal: ~</span>
+        </div>
+        <div ref={screen} className="secret-terminal__screen">
+          {lines.map((l, i) => (
+            <div key={i} className="secret-terminal__line">{l}</div>
+          ))}
+          <form onSubmit={submit} className="secret-terminal__prompt-line">
+            <span className="secret-terminal__prompt">$</span>
+            <input
+              ref={input}
+              type="text"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              className="secret-terminal__input"
+              autoFocus
+            />
+          </form>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
 };
 
 export default SecretTerminal;

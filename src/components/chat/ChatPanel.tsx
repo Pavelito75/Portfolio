@@ -254,7 +254,7 @@ const ChatPanel: React.FC<{ style?: React.CSSProperties; origin?: { x: number; y
 
       return () => {
         active = false;
-        supabase.removeChannel(channel);
+        supabase?.removeChannel(channel);
       };
     } else {
       // Stockage local autonome pour Pavel
