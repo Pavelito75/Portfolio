@@ -1,0 +1,174 @@
+import React, { useCallback, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { FaBriefcase, FaCode, FaEnvelope, FaRocket, FaShieldAlt } from 'react-icons/fa';
+// FaGlobeAmericas retiré car la section internationale est supprimée
+// FaTrophy commenté car achievements est masqué
+import { FiSearch } from 'react-icons/fi';
+import { LanguageSwitcher } from './ui/LanguageSwitcher';
+import { SoundToggle } from './ui/SoundToggle';
+import DockNav from './DockNav';
+import { scrollToSection as jumpTo } from '../utils/scrollToSection';
+import { LINKS } from './SocialLinks';
+
+const NAV_IDS = [
+  'experience',
+  // 'international',
+  'tech-stack',
+  'projects',
+  'writeups',
+  // 'achievements',
+  'contact',
+] as const;
+
+const NAV_KEYS: Record<typeof NAV_IDS[number], string> = {
+  'experience': 'nav.experience',
+  // 'international': 'nav.international',
+  'tech-stack': 'nav.techStack',
+  'projects': 'nav.projects',
+  'writeups': 'nav.writeups',
+  // 'achievements': 'nav.achievements',
+  'contact': 'nav.contact',
+};
+
+// Icône de chaque section dans le Dock ; verre sombre avec nuance cyan
+const DOCK_GRADIENT = 'linear-gradient(160deg, rgba(34, 211, 238, 0.28) 0%, rgba(8, 145, 178, 0.12) 55%, rgba(8, 15, 28, 0.55) 100%)';
+const NAV_ICONS = {
+  'experience': FaBriefcase,
+  // 'international': FaGlobeAmericas,
+  'tech-stack': FaCode,
+  'projects': FaRocket,
+  'writeups': FaShieldAlt,
+  // 'achievements': FaTrophy,
+  'contact': FaEnvelope,
+} as const;
+
+const Header: React.FC = () => {
+  const { t } = useTranslation();
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const navItems = useMemo(
+    () => NAV_IDS.map((id) => ({ id, label: t(NAV_KEYS[id]), icon: NAV_ICONS[id], gradient: DOCK_GRADIENT })),
+    [t]
+  );
+
+  // Réseaux sociaux et CV dans le Dock
+  const dockLinks = useMemo(
+    () => LINKS.map(({ label, href, Icon, ...rest }) => ({
+      id: label,
+      label,
+      icon: Icon,
+      gradient: DOCK_GRADIENT,
+      href,
+      ...('download' in rest ? { download: (rest as { download?: string }).download } : {}),
+    })),
+    []
+  );
+
+  const openPalette = useCallback(() => window.dispatchEvent(new Event('palette:open')), []);
+
+  const scrollToSection = useCallback((sectionId: string) => {
+    setMenuOpen(false);
+    jumpTo(sectionId);
+  }, []);
+
+  return (
+    <header
+      className="site-header fixed top-0 left-0 w-full z-50 transition-colors duration-300"
+    >
+      <div className="site-header__inner w-full">
+
+        {/* Desktop layout */}
+        <div
+          className="hidden md:grid"
+          style={{
+            gridTemplateColumns: '1fr auto 1fr',
+            alignItems: 'center',
+            height: '80px',
+            gap: '2rem',
+          }}
+        >
+          <div />
+
+          <div />
+
+          <div className="site-header__hit" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', marginRight: '60px' }}>
+            <button type="button" className="sound-toggle" onClick={openPalette} aria-label={t('palette.title')} title={`${t('palette.title')} (Ctrl+K)`}>
+              <FiSearch size={18} />
+            </button>
+            <SoundToggle />
+            <LanguageSwitcher />
+          </div>
+        </div>
+
+        {/* Mobile layout */}
+        <div className="flex md:hidden items-center justify-end h-16">
+
+          <div className="flex items-center gap-4">
+            <button type="button" className="sound-toggle" onClick={openPalette} aria-label={t('palette.title')} title={t('palette.title')}>
+              <FiSearch size={18} />
+            </button>
+            <SoundToggle />
+            <LanguageSwitcher />
+            <button
+              className="flex flex-col justify-center items-center w-8 h-8 gap-1.5"
+              onClick={() => setMenuOpen(!menuOpen)}
+              aria-label="Menu"
+            >
+              <span
+                className="block w-5 h-0.5 transition-all duration-300 origin-center"
+                style={{
+                  backgroundColor: 'var(--foreground)',
+                  transform: menuOpen ? 'translateY(8px) rotate(45deg)' : 'none',
+                }}
+              />
+              <span
+                className="block w-5 h-0.5 transition-all duration-300"
+                style={{
+                  backgroundColor: 'var(--foreground)',
+                  opacity: menuOpen ? 0 : 1,
+                }}
+              />
+              <span
+                className="block w-5 h-0.5 transition-all duration-300 origin-center"
+                style={{
+                  backgroundColor: 'var(--foreground)',
+                  transform: menuOpen ? 'translateY(-8px) rotate(-45deg)' : 'none',
+                }}
+              />
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      {/* Dock vertical à gauche (desktop) */}
+      <div className="site-header__hit hidden md:block" style={{ position: 'absolute', top: '20px', left: '20px' }}>
+        <DockNav items={navItems} links={dockLinks} onSelect={scrollToSection} />
+      </div>
+
+      {/* Mobile menu */}
+      <div
+        className="md:hidden overflow-hidden transition-all duration-300"
+        style={{
+          maxHeight: menuOpen ? '460px' : '0',
+          backgroundColor: 'var(--background)',
+        }}
+      >
+        <nav className="flex flex-col" style={{ padding: '4px 20px 20px', gap: '4px' }}>
+          {navItems.map((item) => (
+            <button
+              key={item.id}
+              onClick={() => scrollToSection(item.id)}
+              className="text-left text-sm font-bold uppercase tracking-widest transition-colors duration-200"
+              style={{ color: 'var(--text-muted)', padding: '10px 0' }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
+      </div>
+    </header>
+  );
+};
+
+export default Header;

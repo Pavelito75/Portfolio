@@ -1,0 +1,498 @@
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { play } from '../../utils/sound';
+import { motion } from 'framer-motion';
+import { FaArrowUp, FaChevronLeft, FaPlus, FaSearch, FaUser, FaUserPlus } from 'react-icons/fa';
+import { countries } from 'country-flag-icons';
+import * as Flags from 'country-flag-icons/react/1x1';
+import { supabase, type ChatMessage } from '../../lib/supabase';
+import GifPicker, { GIPHY_KEY } from './GifPicker';
+
+interface Profile {
+  name: string | null;
+  country: string | null;
+}
+
+const PROFILE_KEY = 'chat-profile-pavel';
+const MINE_KEY = 'chat-mine-pavel';
+const MESSAGES_LOCAL_KEY = 'chat-messages-pavel';
+const COOLDOWN_MS = 3000;
+const MAX_LENGTH = 500;
+
+// Messages de bienvenue initiaux pour le chat personnel de Pavel
+const INITIAL_MESSAGES: ChatMessage[] = [
+  {
+    id: 1,
+    created_at: new Date(Date.now() - 3600000).toISOString(),
+    name: "Pavel Gatti",
+    country: "FR",
+    content: "Bonjour et bienvenue sur mon portfolio ! Laissez-moi un message ou posez vos questions directement ici.",
+    gif_url: null,
+  },
+];
+
+const load = <T,>(key: string, fallback: T): T => {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+};
+
+const save = (key: string, value: unknown) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    /* sans persistance */
+  }
+};
+
+const Avatar: React.FC<{ country: string | null; size?: number }> = ({ country, size = 32 }) => {
+  const Flag = country ? (Flags as Record<string, React.ComponentType<React.SVGProps<SVGSVGElement>>>)[country] : null;
+  return (
+    <span className="chat-avatar" style={{ width: size, height: size }}>
+      {Flag ? <Flag width={size} height={size} /> : <FaUser size={size * 0.42} />}
+    </span>
+  );
+};
+
+const ProfileForm: React.FC<{ initial: Profile | null; onDone: (p: Profile) => void }> = ({ initial, onDone }) => {
+  const { t, i18n } = useTranslation();
+  const [anonymous, setAnonymous] = useState(false);
+  const [name, setName] = useState(initial?.name ?? '');
+  const [country, setCountry] = useState<string | null>(initial?.country ?? null);
+  const [query, setQuery] = useState('');
+
+  const list = useMemo(() => {
+    const names = new Intl.DisplayNames([i18n.language.toLowerCase()], { type: 'region', fallback: 'none' });
+    return countries
+      .filter((code) => /^[A-Z]{2}$/.test(code))
+      .map((code) => ({ code, label: names.of(code) }))
+      .filter((c): c is { code: string; label: string } => Boolean(c.label) && c.code in Flags)
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [i18n.language]);
+
+  const q = query.trim().toLowerCase();
+  const filtered = q ? list.filter((c) => c.label.toLowerCase().includes(q)) : list;
+  const trimmed = name.trim();
+
+  return (
+    <form
+      className="chat-profile"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onDone({ name: anonymous || !trimmed ? null : trimmed.slice(0, 30), country });
+      }}
+    >
+      <div className="chat-profile__preview">
+        <Avatar country={country} size={72} />
+        <strong>{anonymous || !trimmed ? t('chat.anonName') : trimmed}</strong>
+      </div>
+
+      <div className="chat-group">
+        <input
+          className="chat-group__input"
+          value={name}
+          maxLength={30}
+          disabled={anonymous}
+          onChange={(e) => setName(e.target.value)}
+          placeholder={t('chat.namePlaceholder')}
+          aria-label={t('chat.name')}
+        />
+        <label className="chat-group__row">
+          {t('chat.anon')}
+          <input
+            type="checkbox"
+            role="switch"
+            className="chat-switch"
+            checked={anonymous}
+            onChange={(e) => setAnonymous(e.target.checked)}
+          />
+        </label>
+      </div>
+
+      <div className="chat-search">
+        <FaSearch size={12} aria-hidden />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t('chat.search')}
+          aria-label={t('chat.search')}
+        />
+      </div>
+
+      <div className="chat-flags no-scrollbar" role="listbox" aria-label={t('chat.flag')}>
+        {!q && (
+          <button
+            type="button"
+            role="option"
+            aria-selected={country === null}
+            aria-label={t('chat.noFlag')}
+            title={t('chat.noFlag')}
+            className={`chat-flag${country === null ? ' is-active' : ''}`}
+            onClick={() => setCountry(null)}
+          >
+            <Avatar country={null} size={34} />
+          </button>
+        )}
+        {filtered.map((c) => (
+          <button
+            type="button"
+            role="option"
+            key={c.code}
+            aria-selected={country === c.code}
+            aria-label={c.label}
+            title={c.label}
+            className={`chat-flag${country === c.code ? ' is-active' : ''}`}
+            onClick={() => setCountry(c.code)}
+          >
+            <Avatar country={c.code} size={34} />
+          </button>
+        ))}
+        {filtered.length === 0 && <p className="chat-flags__empty">{t('palette.empty')}</p>}
+      </div>
+
+      <button type="submit" className="chat-primary">
+        {t('chat.start')}
+      </button>
+    </form>
+  );
+};
+
+const GROUP_GAP_MS = 5 * 60 * 1000;
+const TIMESTAMP_GAP_MS = 60 * 60 * 1000;
+const senderKey = (m: ChatMessage, own: boolean) => (own ? 'me' : `${m.name ?? ''}|${m.country ?? ''}`);
+
+const Tail: React.FC = () => (
+  <svg className="imsg-tail" viewBox="0 0 10 16" aria-hidden="true">
+    <path d="M0 0H3V8C3 12 5.5 14.8 10 16C6 16.6 2.4 16 0 14.6Z" />
+  </svg>
+);
+
+const StatusBar: React.FC = () => {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 15000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <div className="iphone-status" aria-hidden="true">
+      <span className="iphone-status__time">
+        {now.getHours()}:{String(now.getMinutes()).padStart(2, '0')}
+      </span>
+      <span className="iphone-island" />
+      <span className="iphone-status__icons">
+        <svg width="17" height="11" viewBox="0 0 17 11">
+          <rect x="0" y="7" width="3" height="4" rx="1" />
+          <rect x="4.5" y="5" width="3" height="6" rx="1" />
+          <rect x="9" y="2.5" width="3" height="8.5" rx="1" />
+          <rect x="13.5" y="0" width="3" height="11" rx="1" />
+        </svg>
+        <svg width="15" height="11" viewBox="0 0 15 11">
+          <path d="M7.5 2.2c2.1 0 4 .8 5.4 2.1l1.1-1.1A9.2 9.2 0 0 0 7.5.6 9.2 9.2 0 0 0 1 3.2l1.1 1.1a7.6 7.6 0 0 1 5.4-2.1Z" />
+          <path d="M7.5 5.3c1.3 0 2.4.5 3.3 1.3l1.1-1.1a6.2 6.2 0 0 0-8.8 0l1.1 1.1c.9-.8 2-1.3 3.3-1.3Z" />
+          <path d="M7.5 8.3c.5 0 .9.2 1.2.5L7.5 10 6.3 8.8c.3-.3.7-.5 1.2-.5Z" />
+        </svg>
+        <span className="iphone-battery">
+          <span />
+        </span>
+      </span>
+    </div>
+  );
+};
+
+const ChatPanel: React.FC<{ style?: React.CSSProperties; origin?: { x: number; y: number } }> = ({ style, origin }) => {
+  const { t, i18n } = useTranslation();
+  const [profile, setProfile] = useState<Profile | null>(() => load<Profile | null>(PROFILE_KEY, null));
+  const [editing, setEditing] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [text, setText] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [gifOpen, setGifOpen] = useState(false);
+  const [mine, setMine] = useState<number[]>(() => load<number[]>(MINE_KEY, []));
+  const lastSent = useRef(0);
+  const sendingRef = useRef(false);
+  const mineRef = useRef(mine);
+  useEffect(() => {
+    mineRef.current = mine;
+  }, [mine]);
+  const listRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const el = panelRef.current;
+    if (el && origin) el.style.transformOrigin = `${origin.x - el.offsetLeft}px ${origin.y - el.offsetTop}px`;
+  }, [origin]);
+
+  useEffect(() => {
+    let active = true;
+
+    if (supabase) {
+      supabase
+        .from('messages')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(200)
+        .then(({ data, error: err }) => {
+          if (!active) return;
+          if (err) setError(t('chat.loadError'));
+          else setMessages((data ?? []).reverse());
+          setLoading(false);
+        });
+
+      const channel = supabase
+        .channel('portfolio-pavel-chat')
+        .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+          const msg = payload.new as ChatMessage;
+          if (!sendingRef.current && !mineRef.current.includes(msg.id)) play('receive');
+          setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
+        })
+        .subscribe();
+
+      return () => {
+        active = false;
+        supabase.removeChannel(channel);
+      };
+    } else {
+      // Stockage local autonome pour Pavel
+      const local = load<ChatMessage[]>(MESSAGES_LOCAL_KEY, INITIAL_MESSAGES);
+      setMessages(local);
+      setLoading(false);
+    }
+  }, [t]);
+
+  const scrollToEnd = () => {
+    const el = listRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  };
+  useEffect(scrollToEnd, [messages, profile, editing, gifOpen]);
+
+  const lang = i18n.language.toLowerCase();
+  const formatStamp = useMemo(() => {
+    const recent = new Intl.DateTimeFormat(lang, { weekday: 'short', hour: '2-digit', minute: '2-digit' });
+    const older = new Intl.DateTimeFormat(lang, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    return (d: Date) => (Date.now() - d.getTime() < 6 * 24 * 3600 * 1000 ? recent : older).format(d);
+  }, [lang]);
+
+  const post = async (content: string, gifUrl: string | null) => {
+    if (!profile || sending) return false;
+    if (Date.now() - lastSent.current < COOLDOWN_MS) {
+      setError(t('chat.wait'));
+      play('error');
+      return false;
+    }
+    setSending(true);
+    sendingRef.current = true;
+    setError(null);
+
+    if (supabase) {
+      const { data, error: err } = await supabase
+        .from('messages')
+        .insert({ name: profile.name, country: profile.country, content: content.slice(0, MAX_LENGTH), gif_url: gifUrl })
+        .select()
+        .single();
+      setSending(false);
+      if (err || !data) {
+        sendingRef.current = false;
+        setError(t('chat.sendError'));
+        play('error');
+        return false;
+      }
+      lastSent.current = Date.now();
+      const msg = data as ChatMessage;
+      mineRef.current = [...mineRef.current, msg.id];
+      sendingRef.current = false;
+      play('send');
+      setMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
+      setMine((prev) => {
+        const next = [...prev, msg.id].slice(-200);
+        save(MINE_KEY, next);
+        return next;
+      });
+      return true;
+    } else {
+      // Chat local Pavel
+      const newId = Date.now();
+      const newMsg: ChatMessage = {
+        id: newId,
+        created_at: new Date().toISOString(),
+        name: profile.name,
+        country: profile.country,
+        content: content.slice(0, MAX_LENGTH),
+        gif_url: gifUrl,
+      };
+      setSending(false);
+      lastSent.current = Date.now();
+      mineRef.current = [...mineRef.current, newId];
+      sendingRef.current = false;
+      play('send');
+      setMessages((prev) => {
+        const next = [...prev, newMsg];
+        save(MESSAGES_LOCAL_KEY, next);
+        return next;
+      });
+      setMine((prev) => {
+        const next = [...prev, newId].slice(-200);
+        save(MINE_KEY, next);
+        return next;
+      });
+      return true;
+    }
+  };
+
+  const send = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const content = text.trim();
+    if (content && (await post(content, null))) setText('');
+  };
+
+  const sendGif = async (url: string) => {
+    if (await post('', url)) setGifOpen(false);
+  };
+
+  const showForm = editing;
+  const lastOwnId = [...messages].reverse().find((m) => mine.includes(m.id))?.id;
+
+  return (
+    <motion.div
+      className="chat-panel"
+      role="dialog"
+      aria-label={t('chat.title')}
+      style={style}
+      ref={panelRef}
+      initial={{ opacity: 0, scale: 0.06 }}
+      animate={{ opacity: 1, scale: 1, transition: { duration: 0.46, ease: [0.16, 1, 0.3, 1] } }}
+      exit={{ opacity: 0, scale: 0.06, transition: { duration: 0.28, ease: [0.4, 0, 0.7, 0.2] } }}
+    >
+      <StatusBar />
+      {showForm ? (
+        <div className="imsg-header imsg-header--title">
+          <strong>{t('chat.profileTitle')}</strong>
+        </div>
+      ) : (
+        <div className="imsg-header">
+          <button type="button" className="imsg-back" aria-label={t('chat.editProfile')} onClick={() => setEditing(true)}>
+            <FaChevronLeft size={20} />
+          </button>
+          <div className="imsg-contact">
+            <div className="imsg-contact__avatar">
+              <FaUser size={24} />
+            </div>
+            <span className="imsg-contact__name">Pavel Gatti</span>
+          </div>
+          <div className="imsg-header__spacer" />
+        </div>
+      )}
+
+      {showForm ? (
+        <ProfileForm
+          initial={profile}
+          onDone={(p) => {
+            save(PROFILE_KEY, p);
+            setProfile(p);
+            setEditing(false);
+          }}
+        />
+      ) : (
+        <>
+          <div className="imsg-list" ref={listRef}>
+            <p className="imsg-note">Pavel Gatti · En ligne</p>
+            {loading && <p className="chat-empty">{t('chat.loading')}</p>}
+            {!loading && messages.length === 0 && <p className="chat-empty">{t('chat.empty')}</p>}
+            {messages.map((m, i) => {
+              const own = mine.includes(m.id);
+              const prev = messages[i - 1];
+              const next = messages[i + 1];
+              const time = new Date(m.created_at).getTime();
+              const showStamp = !prev || time - new Date(prev.created_at).getTime() > TIMESTAMP_GAP_MS;
+              const key = senderKey(m, own);
+              const first =
+                showStamp ||
+                !prev ||
+                senderKey(prev, mine.includes(prev.id)) !== key ||
+                time - new Date(prev.created_at).getTime() > GROUP_GAP_MS;
+              const nextStamp = next && new Date(next.created_at).getTime() - time > TIMESTAMP_GAP_MS;
+              const last =
+                !next ||
+                nextStamp ||
+                senderKey(next, mine.includes(next.id)) !== key ||
+                new Date(next.created_at).getTime() - time > GROUP_GAP_MS;
+
+              return (
+                <React.Fragment key={m.id}>
+                  {showStamp && <p className="imsg-stamp">{formatStamp(new Date(m.created_at))}</p>}
+                  {!own && first && <p className="imsg-name">{m.name ?? t('chat.anonName')}</p>}
+                  <div className={`imsg-row${own ? ' is-own' : ''}${last ? ' is-last' : ''}`}>
+                    {!own && (last ? <Avatar country={m.country} size={28} /> : <span className="imsg-spacer" />)}
+                    {m.gif_url ? (
+                      <img className="imsg-gif" src={m.gif_url} alt="GIF" onLoad={scrollToEnd} />
+                    ) : (
+                      <p className="imsg-bubble">
+                        {m.content}
+                        {last && <Tail />}
+                      </p>
+                    )}
+                  </div>
+                  {m.gif_url && m.content.trim() && (
+                    <div className={`imsg-row${own ? ' is-own' : ''}`}>
+                      {!own && <span className="imsg-spacer" />}
+                      <p className="imsg-bubble">{m.content}</p>
+                    </div>
+                  )}
+                  {m.id === lastOwnId && i === messages.length - 1 && <p className="imsg-delivered">{t('chat.delivered')}</p>}
+                </React.Fragment>
+              );
+            })}
+          </div>
+
+          {!profile ? (
+            <div className="imsg-compose">
+              <button type="button" className="imsg-join" onClick={() => setEditing(true)}>
+                <FaUserPlus size={15} /> {t('chat.joinCta')}
+              </button>
+            </div>
+          ) : (
+            <>
+            {gifOpen && GIPHY_KEY && <GifPicker onPick={sendGif} />}
+
+            <form className="imsg-compose" onSubmit={send}>
+              {GIPHY_KEY && (
+                <button
+                  type="button"
+                  className={`imsg-gif-btn${gifOpen ? ' is-active' : ''}`}
+                  onClick={() => setGifOpen((o) => !o)}
+                  aria-label={t('chat.gif')}
+                  aria-pressed={gifOpen}
+                >
+                  <FaPlus size={14} />
+                </button>
+              )}
+              <div className="imsg-field">
+                <input
+                  value={text}
+                  maxLength={MAX_LENGTH}
+                  onChange={(e) => setText(e.target.value)}
+                  onFocus={() => setGifOpen(false)}
+                  placeholder={t('chat.placeholder')}
+                  aria-label={t('chat.placeholder')}
+                />
+                {text.trim() && (
+                  <button type="submit" className="imsg-send" aria-label={t('chat.send')} disabled={sending}>
+                    <FaArrowUp size={13} />
+                  </button>
+                )}
+              </div>
+            </form>
+            </>
+          )}
+          {error && <p className="chat-error" role="alert">{error}</p>}
+        </>
+      )}
+    </motion.div>
+  );
+};
+
+export default ChatPanel;

@@ -1,0 +1,88 @@
+/* Hero: texte centré au mobile, aligné à gauche sur desktop */
+.hero {
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 96px 24px 48px;
+}
+.hero__inner {
+  width: min(1080px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 36px;
+  text-align: center;
+}
+.hero__text { display: flex; flex-direction: column; align-items: center; gap: 18px; min-width: 0; max-width: 860px; }
+@media (min-width: 900px) {
+  .hero { padding: 96px 48px 48px 140px; }
+  .hero__inner { align-items: flex-start; text-align: left; }
+  .hero__text { align-items: flex-start; }
+}
+
+/* Ligne de status : point vert pulsant + texte en mono */
+.hero__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #6ee7b7;
+}
+.hero-status__dot {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #34d399;
+  flex-shrink: 0;
+}
+.hero-status__dot::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: #34d399;
+  animation: hero-status-ping 1.8s ease-out infinite;
+}
+@keyframes hero-status-ping {
+  to { transform: scale(3.2); opacity: 0; }
+}
+
+.hero__name {
+  font-size: clamp(2.5rem, 6.4vw, 4.75rem);
+  font-weight: 700;
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+  color: var(--foreground);
+  overflow-wrap: break-word;
+}
+
+/* Rôle en cours de frappe : hauteur réservée pour éviter les sauts */
+.hero__role {
+  min-height: 1.4em;
+  font-family: var(--font-mono);
+  font-size: clamp(1.05rem, 2.4vw, 1.5rem);
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0;
+  color: #cbd5e1;
+}
+.hero__prompt { color: var(--accent); margin-right: 0.6em; }
+.hero-caret {
+  display: inline-block;
+  width: 0.55em;
+  height: 1.05em;
+  margin-left: 3px;
+  vertical-align: -0.18em;
+  background: var(--accent);
+  animation: hero-caret 1s steps(1) infinite;
+}
+@keyframes hero-caret {
+  50% { opacity: 0; }
+}
+.hero__desc { color: var(--text-muted); font-size: 1.05rem; line-height: 1.6; }

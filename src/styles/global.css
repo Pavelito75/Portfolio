@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+/* Cada parte do site tem o seu arquivo; a ordem abaixo é a ordem em que os estilos são aplicados */
+@import "./base.css";
+@import "./showcase.css";
+@import "./international.css";
+@import "./achievements.css";
+@import "./projects.css";
+@import "./globe.css";
+@import "./header.css";
+@import "./chat.css";
+@import "./hero.css";
+@import "./writeups.css";
+@import "./palette.css";
+@import "./tech.css";
